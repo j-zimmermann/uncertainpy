@@ -142,32 +142,36 @@ class UncertaintyCalculations(ParameterBase):
         self.runmodel.parameters = self.parameters
 
     def calc_sens(self, dim, poly, uhat):
-        variance = np.sum(uhat[1:]**2)
-        main = np.zeros(dim)
-        total = np.zeros(dim)
-        #Compute sens
+        coeffs = np.asarray(uhat)
+
+        variance = np.sum(coeffs[1:]**2, axis=0)
+        main = np.zeros((dim,) + variance.shape)
+        total = np.zeros((dim,) + variance.shape)
+
         for idx, pol in enumerate(poly[1:]):
-            add_total = [False,]*dim
-            add_main = [True,]*dim
+            add_total = [False] * dim
+            add_main = [True] * dim
+
             for term in pol.exponents:
                 for var in range(dim):
                     if term[var] > 0:
                         add_total[var] = True
                         add_main[var] = add_main[var] and True
-                        add_main[0:var] = [False,]*var
-                        try:
-                            add_main[var+1::] = [False,]*(dim-var)
-                        except IndexError:
-                            pass
+                        add_main[:var] = [False] * var
+                        add_main[var+1:] = [False] * max(0, dim - var - 1)
+
+            coeff_sq = coeffs[idx + 1] ** 2
+
             for var in range(dim):
                 if add_main[var]:
-                    main[var] += uhat[idx+1]**2
+                    main[var] += coeff_sq
                 if add_total[var]:
-                    total[var] += uhat[idx+1]**2
-        
-        main = main/variance
-        total = total/variance
+                    total[var] += coeff_sq
+
+        main = np.divide(main, variance, out=np.zeros_like(main), where=variance != 0)
+        total = np.divide(total, variance, out=np.zeros_like(total), where=variance != 0)
         return main, total
+
 
 
     def convert_uncertain_parameters(self, uncertain_parameters=None):
@@ -691,6 +695,7 @@ class UncertaintyCalculations(ParameterBase):
         logger = get_logger(self)
 
         U_hat = {}
+        approx = {}
         # Calculate PC for each feature
         for feature in tqdm(data,
                             desc="Calculating PC for each feature",
